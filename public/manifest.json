@@ -1,0 +1,21 @@
+{
+  "name": "Shadow Topup Center",
+  "short_name": "ShadowTopup",
+  "description": "Nepal's Premier Gaming Top-Up & Digital Subscription Center",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070b14",
+  "theme_color": "#070b14",
+  "icons": [
+    {
+      "src": "https://rosgayshop.com/assets/upload/logo/ApXEhkuiBGNV9bY8AQKPxKh4VvgK0V.webp",
+      "sizes": "192x192",
+      "type": "image/webp"
+    },
+    {
+      "src": "https://rosgayshop.com/assets/upload/logo/ApXEhkuiBGNV9bY8AQKPxKh4VvgK0V.webp",
+      "sizes": "512x512",
+      "type": "image/webp"
+    }
+  ]
+}

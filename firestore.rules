@@ -1,0 +1,67 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isMasterAdmin() {
+      return isAuthenticated() && request.auth.token.email == "yadunepal8@gmail.com";
+    }
+
+    // Users Collection - Allow customers to read/write their own profile, master admin can manage
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isMasterAdmin();
+      allow create, update: if isOwner(userId) || isMasterAdmin();
+      allow delete: if isMasterAdmin();
+    }
+
+    // Products & Categories (Public read, authenticated manage)
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Orders Collection
+    match /orders/{orderId} {
+      allow create: if true;
+      allow read: if isAuthenticated() || true;
+      allow update, delete: if isAuthenticated();
+    }
+
+    // Wallet Fund Requests
+    match /fund_requests/{reqId} {
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
+    }
+
+    // Coupons & Store Settings
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // General fallback for application documents
+    match /{document=**} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+  }
+}
