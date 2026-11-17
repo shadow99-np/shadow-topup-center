@@ -333,9 +333,26 @@ export default function AdminDashboardPage() {
     }
     setCouponFormSubmitting(true);
     try {
-      const selectedProduct = applicableProductIdInput !== 'all' 
-        ? products.find(p => p.id === applicableProductIdInput)
-        : undefined;
+      let applicableId: string | undefined = undefined;
+      let applicableName: string | undefined = undefined;
+
+      if (applicableProductIdInput.startsWith('cat:')) {
+        applicableId = applicableProductIdInput;
+        const catMap: Record<string, string> = {
+          'cat:topup': 'All Game Top-Ups (Free Fire, Roblox, MLBB, etc.)',
+          'cat:subscription': 'All Subscriptions (ChatGPT, CapCut, Netflix, etc.)',
+          'cat:giftcard': 'All Gift Cards & Vouchers',
+          'cat:live_coins': 'All Live App Coins (TikTok, etc.)',
+          'cat:gamekeys': 'All Digital Keys & Cards'
+        };
+        applicableName = catMap[applicableProductIdInput] || 'Category Restriction';
+      } else if (applicableProductIdInput !== 'all') {
+        const selectedProduct = products.find(p => p.id === applicableProductIdInput);
+        if (selectedProduct) {
+          applicableId = selectedProduct.id;
+          applicableName = selectedProduct.name;
+        }
+      }
 
       const newCoupon: Coupon = {
         code: couponCodeInput.trim().toUpperCase(),
@@ -344,11 +361,15 @@ export default function AdminDashboardPage() {
         minOrderNpr: minOrderInput ? Number(minOrderInput) : undefined,
         maxDiscountNpr: discountTypeInput === 'percentage' && maxDiscountInput ? Number(maxDiscountInput) : undefined,
         expiryDate: expiryDateInput ? expiryDateInput : undefined,
-        applicableProductId: selectedProduct ? selectedProduct.id : undefined,
-        applicableProductName: selectedProduct ? selectedProduct.name : undefined,
+        applicableProductId: applicableId,
+        applicableProductName: applicableName,
         usedCount: 0,
         active: couponActiveInput
       };
+
+      // Optimistic instant UI addition
+      setCouponsList(prev => [newCoupon, ...prev.filter(c => c.code.toUpperCase() !== newCoupon.code)]);
+
       const ok = await saveCoupon(newCoupon);
       if (ok) {
         setCouponFormSuccess(`Coupon ${newCoupon.code} created and published successfully!`);
@@ -373,17 +394,21 @@ export default function AdminDashboardPage() {
       ? `${rejectReasonPreset}: ${rejectCustomNote.trim()}`
       : rejectReasonPreset;
 
+    const target = rejectTarget;
+    setRejectTarget(null);
+    setRejectCustomNote('');
+    setRejectReasonPreset('False / Unverified Transaction Reference');
+
     try {
-      if (rejectTarget.type === 'order') {
-        await updateOrderStatus(rejectTarget.id, 'Cancelled', combinedReason);
+      if (target.type === 'order') {
+        // Optimistic UI update
+        setOrders(prev => prev.map(o => o.id === target.id ? { ...o, orderStatus: 'Cancelled', statusNotes: combinedReason, updatedAt: new Date().toISOString() } : o));
+        await updateOrderStatus(target.id, 'Cancelled', combinedReason);
         await loadOrders();
-      } else if (rejectTarget.type === 'fund') {
-        await rejectFundRequest(rejectTarget.id, combinedReason);
+      } else if (target.type === 'fund') {
+        await rejectFundRequest(target.id, combinedReason);
         await refreshFundRequests();
       }
-      setRejectTarget(null);
-      setRejectCustomNote('');
-      setRejectReasonPreset('False / Unverified Transaction Reference');
     } catch (e) {
       console.error('Error rejecting target:', e);
     } finally {
@@ -392,12 +417,15 @@ export default function AdminDashboardPage() {
   };
 
   const handleToggleCoupon = async (code: string, currentActive: boolean) => {
+    // Optimistic UI update
+    setCouponsList(prev => prev.map(c => c.code.toUpperCase() === code.toUpperCase() ? { ...c, active: !currentActive } : c));
     await toggleCouponStatus(code, !currentActive);
     loadCoupons();
   };
 
   const handleDeleteCoupon = async (code: string) => {
     if (confirm(`Are you sure you want to delete coupon code "${code}"?`)) {
+      setCouponsList(prev => prev.filter(c => c.code.toUpperCase() !== code.toUpperCase()));
       await deleteCoupon(code);
       loadCoupons();
     }
@@ -443,12 +471,14 @@ export default function AdminDashboardPage() {
   };
 
   const handleToggleAnnouncement = async (id: string, currentActive: boolean) => {
+    setAnnouncementsList(prev => prev.map(a => a.id === id ? { ...a, active: !currentActive } : a));
     await toggleAnnouncementStatus(id, !currentActive);
     loadAnnouncements();
   };
 
   const handleDeleteAnnouncement = async (id: string) => {
     if (confirm('Are you sure you want to delete this announcement?')) {
+      setAnnouncementsList(prev => prev.filter(a => a.id !== id));
       await deleteAnnouncement(id);
       loadAnnouncements();
     }
@@ -466,6 +496,8 @@ export default function AdminDashboardPage() {
   };
 
   const handleStatusChange = async (orderId: string, status: OrderStatus) => {
+    // Optimistic UI update
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, orderStatus: status, statusNotes: actionNotes || o.statusNotes, updatedAt: new Date().toISOString() } : o));
     await updateOrderStatus(orderId, status, actionNotes);
     setActionNotes('');
     loadOrders();
@@ -1785,14 +1817,25 @@ export default function AdminDashboardPage() {
                     className="w-full bg-[#141e34] border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500"
                   >
                     <option value="all">🌐 All Products (Storewide Discount)</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        🎯 {p.name} ({p.categoryLabel})
-                      </option>
-                    ))}
+                    
+                    <optgroup label="📂 Category Restrictions">
+                      <option value="cat:topup">🎮 All Game Top-Ups (Free Fire, Roblox, MLBB, PUBG, etc.)</option>
+                      <option value="cat:subscription">📦 All App Subscriptions (ChatGPT, CapCut, Netflix, etc.)</option>
+                      <option value="cat:giftcard">💳 All Gift Cards (Steam, Dollar Card, etc.)</option>
+                      <option value="cat:live_coins">📻 All Live App Coins (TikTok Coins, etc.)</option>
+                      <option value="cat:gamekeys">🔑 All Digital Cards & Keys</option>
+                    </optgroup>
+
+                    <optgroup label="🎯 Specific Products (Including New Releases)">
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.id.includes('roblox') ? '🧱' : p.id.includes('efoot') ? '⚽' : p.id.includes('strike') ? '🔫' : p.id.includes('winds') ? '⚔️' : p.id.includes('ff') || p.id.includes('free-fire') ? '🔥' : '🎯'} {p.name} ({p.categoryLabel})
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                   <p className="text-[10px] text-slate-400 mt-1">
-                    Select a specific product (e.g. ChatGPT Plus, Free Fire) or leave storewide.
+                    Restrict discount to a specific game (e.g. Roblox Robux, Free Fire), a whole category, or leave storewide.
                   </p>
                 </div>
 

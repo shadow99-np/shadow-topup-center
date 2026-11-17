@@ -1,13 +1,14 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { onAuthStateChanged, signOut, getRedirectResult } from 'firebase/auth';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { UserProfile, WalletFundRequest } from '@/types/marketplace';
 import { 
   firebaseSignIn, 
   firebaseSignUp, 
   firebaseGoogleSignIn,
+  firebaseGoogleRedirectSignIn,
   firebasePasswordReset,
   firebaseSignOut,
   submitFundRequest,
@@ -29,6 +30,7 @@ interface AuthContextType {
   login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   signup: (email: string, pass: string, name: string, phone?: string) => Promise<{ success: boolean; error?: string }>;
   loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+  loginWithGoogleRedirect: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   logout: () => Promise<void>;
   deductWalletBalance: (amount: number) => boolean;
@@ -65,10 +67,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(false);
     }
 
-    // 2. Real-time Firebase Auth state observer
+    // 2. Real-time Firebase Auth state observer and Redirect Result handler
     let unsubscribe: (() => void) | undefined;
     if (isFirebaseConfigured && auth && db) {
       const firestore = db;
+
+      // Handle return from Google OAuth redirect (especially for mobile browsers)
+      getRedirectResult(auth).then(async (cred) => {
+        if (cred && cred.user) {
+          const fbUser = cred.user;
+          const isUserAdmin = isMasterAdmin(fbUser.email);
+          const redirectProfile: UserProfile = {
+            uid: fbUser.uid,
+            email: fbUser.email || '',
+            displayName: fbUser.displayName || fbUser.email?.split('@')[0] || (isUserAdmin ? 'Yadu Nepal' : 'Verified Gamer'),
+            phone: fbUser.phoneNumber || '',
+            role: isUserAdmin ? 'super_admin' : 'customer',
+            accessId: isUserAdmin ? 'SHADOW-ROOT-ADMIN' : ('SHADOW-' + fbUser.uid.substring(0, 4).toUpperCase()),
+            walletBalance: isUserAdmin ? 100000 : 0,
+            createdAt: new Date().toISOString(),
+          };
+          setUser(redirectProfile);
+          localStorage.setItem('nepal_market_auth_user', JSON.stringify(redirectProfile));
+          try {
+            await setDoc(doc(firestore, 'users', fbUser.uid), redirectProfile, { merge: true });
+          } catch (e) {}
+        }
+      }).catch((e) => {
+        console.warn('Google redirect result check notice:', e);
+      });
+
       unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
         if (fbUser) {
           // If current local session is verified master admin, don't overwrite with customer
@@ -187,13 +215,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const current = user.walletBalance || 0;
     if (current < amount) return false;
 
+    const newBalance = current - amount;
     const updatedUser: UserProfile = {
       ...user,
-      walletBalance: current - amount,
+      walletBalance: newBalance,
     };
     setUser(updatedUser);
     localStorage.setItem('nepal_market_auth_user', JSON.stringify(updatedUser));
+
+    // Persist new balance to Firestore
+    if (isFirebaseConfigured && db && user.uid) {
+      updateDoc(doc(db, 'users', user.uid), { walletBalance: newBalance }).catch((err) => {
+        console.warn('Failed to persist deducted wallet balance in Firestore:', err);
+      });
+    }
+
     return true;
+  };
+
+  const loginWithGoogleRedirect = async () => {
+    await firebaseGoogleRedirectSignIn();
   };
 
   const requestAddFunds = async (
@@ -271,6 +312,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         signup,
         loginWithGoogle,
+        loginWithGoogleRedirect,
         resetPassword,
         logout,
         deductWalletBalance,

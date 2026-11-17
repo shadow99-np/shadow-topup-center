@@ -81,10 +81,29 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAppliedCoupon(null);
   };
 
-  // Auto-remove applied coupon if its specific required product is removed from cart
+  // Helper to match cart item against coupon restriction (supports specific ID, slug, and category)
+  const matchesCouponProduct = (item: CartItem, appProductId?: string): boolean => {
+    if (!appProductId || appProductId === 'all') return true;
+    if (appProductId.startsWith('cat:')) {
+      return item.category === appProductId.replace('cat:', '');
+    }
+    const cleanApp = appProductId.toLowerCase().trim();
+    const itemId = (item.productId || '').toLowerCase();
+    const itemSlug = (item.productSlug || '').toLowerCase();
+    return (
+      itemId === cleanApp ||
+      itemSlug === cleanApp ||
+      (cleanApp.includes('roblox') && (itemId.includes('roblox') || itemSlug.includes('roblox'))) ||
+      (cleanApp.includes('efootball') && (itemId.includes('efoot') || itemSlug.includes('efoot'))) ||
+      (cleanApp.includes('strike') && (itemId.includes('strike') || itemSlug.includes('strike'))) ||
+      (cleanApp.includes('winds') && (itemId.includes('winds') || itemSlug.includes('winds')))
+    );
+  };
+
+  // Auto-remove applied coupon if its required product/category is removed from cart
   useEffect(() => {
     if (appliedCoupon?.applicableProductId) {
-      const hasProduct = items.some(i => i.productId === appliedCoupon.applicableProductId);
+      const hasProduct = items.some(i => matchesCouponProduct(i, appliedCoupon.applicableProductId));
       if (!hasProduct) {
         setAppliedCoupon(null);
       }
@@ -95,10 +114,10 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   let discountNpr = 0;
   if (appliedCoupon && subtotal >= (appliedCoupon.minOrderNpr || 0)) {
-    // If restricted to a specific product, discount is calculated on that product's subtotal
+    // If restricted to a specific product or category, discount is calculated on that eligible subtotal
     let eligibleSubtotal = subtotal;
-    if (appliedCoupon.applicableProductId) {
-      const eligibleItems = items.filter(i => i.productId === appliedCoupon.applicableProductId);
+    if (appliedCoupon.applicableProductId && appliedCoupon.applicableProductId !== 'all') {
+      const eligibleItems = items.filter(i => matchesCouponProduct(i, appliedCoupon.applicableProductId));
       eligibleSubtotal = eligibleItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
     }
 
@@ -132,8 +151,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: 'This coupon usage limit has been reached.' };
     }
 
-    if (found.applicableProductId) {
-      const hasProduct = items.some(i => i.productId === found.applicableProductId);
+    if (found.applicableProductId && found.applicableProductId !== 'all') {
+      const hasProduct = items.some(i => matchesCouponProduct(i, found.applicableProductId));
       if (!hasProduct) {
         return { 
           success: false, 

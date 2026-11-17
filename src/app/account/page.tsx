@@ -46,6 +46,7 @@ export default function CustomerAccountPage() {
     login,
     signup,
     loginWithGoogle,
+    loginWithGoogleRedirect,
     resetPassword
   } = useAuth();
 
@@ -216,9 +217,19 @@ export default function CustomerAccountPage() {
       try {
         const res = await loginWithGoogle();
         if (!res.success) {
+          if (res.error?.toLowerCase().includes('popup') || res.error?.toLowerCase().includes('blocked')) {
+            await loginWithGoogleRedirect();
+            return;
+          }
           setAuthError(res.error || 'Google sign-in could not be completed.');
         }
       } catch (err: any) {
+        if (err.message?.toLowerCase().includes('popup') || err.message?.toLowerCase().includes('blocked')) {
+          try {
+            await loginWithGoogleRedirect();
+            return;
+          } catch (rErr) {}
+        }
         setAuthError(err.message || 'Failed to authenticate with Google.');
       } finally {
         setGoogleLoading(false);

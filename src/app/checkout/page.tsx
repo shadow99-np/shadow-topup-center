@@ -91,14 +91,17 @@ export default function CheckoutPage() {
   const [couponCodeInput, setCouponCodeInput] = useState('');
   const [couponMessage, setCouponMessage] = useState<{ text: string; isError: boolean } | null>(null);
 
-  // Auto-fill customer details from authenticated user
+  // Auto-fill customer details from authenticated user & auto-select wallet if funds available
   useEffect(() => {
     if (user) {
       if (!customerName && user.displayName) setCustomerName(user.displayName);
       if (!customerEmail && user.email) setCustomerEmail(user.email);
       if (!customerPhone && user.phone) setCustomerPhone(user.phone);
+      if (walletBalance >= totalNpr && totalNpr > 0) {
+        setSelectedMethod('wallet');
+      }
     }
-  }, [user]);
+  }, [user, walletBalance, totalNpr]);
 
   const paymentConfig = NEPAL_PAYMENT_METHODS[selectedMethod];
 
@@ -381,66 +384,118 @@ export default function CheckoutPage() {
 
           {/* STEP 2: Select Nepali Payment Method */}
           <div className="p-6 rounded-3xl bg-[#0e1526] border border-white/10 shadow-xl space-y-5">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-white pb-3 border-b border-white/5 flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-black">2</span>
-              <span>Choose Nepali Payment Method</span>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-white pb-3 border-b border-white/5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-black">2</span>
+                <span>Choose Payment Method</span>
+              </div>
+              {user && (
+                <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                  <Wallet className="w-3.5 h-3.5" />
+                  <span>Balance: {formatNpr(walletBalance)}</span>
+                </span>
+              )}
             </h2>
 
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              {/* Option 0: Shadow Wallet */}
-              <button
-                type="button"
+            {/* Prominent Website / Deposit Balance Option */}
+            {user ? (
+              <div
                 onClick={() => setSelectedMethod('wallet')}
-                className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
+                className={`p-4 rounded-2xl border cursor-pointer transition-all ${
                   selectedMethod === 'wallet'
-                    ? 'border-emerald-500 bg-emerald-600/15 shadow-lg shadow-emerald-500/20 scale-[1.02]'
-                    : 'border-white/5 bg-[#141e34] hover:border-white/15'
+                    ? 'border-emerald-500 bg-emerald-950/40 shadow-lg shadow-emerald-500/20 ring-1 ring-emerald-500/50'
+                    : 'border-white/10 bg-[#141e34] hover:border-emerald-500/30'
                 }`}
               >
-                <div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    Instant ⚡
-                  </span>
-                  <h4 className="text-xs font-bold text-white mt-2 flex items-center gap-1">
-                    <Wallet className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Shadow Wallet</span>
-                  </h4>
-                </div>
-
-                <div className="mt-3 flex items-center justify-between">
-                  <span className="text-[10px] text-emerald-400 font-bold">{formatNpr(walletBalance)}</span>
-                  <div className={`w-3.5 h-3.5 rounded-full border ${selectedMethod === 'wallet' ? 'border-emerald-400 bg-emerald-500' : 'border-slate-500'}`} />
-                </div>
-              </button>
-
-              {(Object.keys(NEPAL_PAYMENT_METHODS) as PaymentMethod[]).map((key) => {
-                const method = NEPAL_PAYMENT_METHODS[key];
-                const isSelected = selectedMethod === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setSelectedMethod(key)}
-                    className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
-                      isSelected
-                        ? 'border-indigo-500 bg-indigo-600/15 shadow-lg shadow-indigo-500/20 scale-[1.02]'
-                        : 'border-white/5 bg-[#141e34] hover:border-white/15'
-                    }`}
-                  >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 flex-shrink-0">
+                      <Wallet className="w-5 h-5" />
+                    </div>
                     <div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-slate-200">
-                        {method.badge}
-                      </span>
-                      <h4 className="text-xs font-bold text-white mt-2">{method.name}</h4>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white">Pay via Website / Deposit Balance</span>
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          ⚡ 0-Wait Instant
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Direct debit from your store account • No transaction screenshot required
+                      </p>
                     </div>
+                  </div>
 
-                    <div className="mt-3 flex items-center justify-between">
-                      <span className="text-[10px] text-slate-400">NPR Wallet</span>
-                      <div className={`w-3.5 h-3.5 rounded-full border ${isSelected ? 'border-indigo-400 bg-indigo-500' : 'border-slate-500'}`} />
+                  <div className="flex items-center gap-3 justify-between sm:justify-end border-t sm:border-t-0 border-white/5 pt-2 sm:pt-0">
+                    <div className="text-left sm:text-right">
+                      <p className="text-[10px] uppercase font-bold text-slate-400">Your Balance</p>
+                      <p className="text-sm font-black text-emerald-400">{formatNpr(walletBalance)}</p>
                     </div>
-                  </button>
-                );
-              })}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setSelectedMethod('wallet'); }}
+                      className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition ${
+                        selectedMethod === 'wallet'
+                          ? 'bg-emerald-600 text-white shadow-md'
+                          : 'bg-white/10 text-slate-200 hover:bg-emerald-600 hover:text-white'
+                      }`}
+                    >
+                      {selectedMethod === 'wallet' ? 'Selected ✓' : 'Use Balance'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-indigo-950/30 border border-indigo-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center flex-shrink-0">
+                    <Wallet className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-white">Have a Website Deposit Balance?</p>
+                    <p className="text-[11px] text-slate-400">Sign in to complete purchase with 1-click deposit balance debit.</p>
+                  </div>
+                </div>
+                <Link href="/account" className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs whitespace-nowrap shadow-md">
+                  Sign In to Pay
+                </Link>
+              </div>
+            )}
+
+            {/* Direct Nepali Payment Providers */}
+            <div>
+              <p className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">
+                Or Pay Directly via QR / Digital Wallet
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {(Object.keys(NEPAL_PAYMENT_METHODS) as PaymentMethod[]).map((key) => {
+                  const method = NEPAL_PAYMENT_METHODS[key];
+                  const isSelected = selectedMethod === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setSelectedMethod(key)}
+                      className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
+                        isSelected
+                          ? 'border-indigo-500 bg-indigo-600/15 shadow-lg shadow-indigo-500/20 scale-[1.02]'
+                          : 'border-white/5 bg-[#141e34] hover:border-white/15'
+                      }`}
+                    >
+                      <div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-slate-200">
+                          {method.badge}
+                        </span>
+                        <h4 className="text-xs font-bold text-white mt-2">{method.name}</h4>
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400">NPR Direct</span>
+                        <div className={`w-3.5 h-3.5 rounded-full border ${isSelected ? 'border-indigo-400 bg-indigo-500' : 'border-slate-500'}`} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Wallet Payment Card */}
@@ -770,10 +825,20 @@ export default function CheckoutPage() {
             <button
               type="submit"
               disabled={isSubmitting || isCompressing}
-              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:opacity-95 text-white font-extrabold text-sm shadow-xl shadow-indigo-500/30 transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+              className={`w-full py-3.5 rounded-xl text-white font-extrabold text-sm shadow-xl transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 ${
+                selectedMethod === 'wallet'
+                  ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:opacity-95 shadow-emerald-500/30'
+                  : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:opacity-95 shadow-indigo-500/30'
+              }`}
             >
-              <CheckCircle className="w-4 h-4" />
-              <span>{isSubmitting ? 'Confirming Order...' : 'Submit & Confirm Payment'}</span>
+              {selectedMethod === 'wallet' ? <Zap className="w-4 h-4 fill-white" /> : <CheckCircle className="w-4 h-4" />}
+              <span>
+                {isSubmitting
+                  ? (selectedMethod === 'wallet' ? 'Debiting Balance & Confirming...' : 'Confirming Order...')
+                  : selectedMethod === 'wallet'
+                  ? `⚡ Pay ${formatNpr(totalNpr)} with Website Balance`
+                  : 'Submit & Confirm Payment'}
+              </span>
             </button>
 
             <div className="pt-2 text-center space-y-1">

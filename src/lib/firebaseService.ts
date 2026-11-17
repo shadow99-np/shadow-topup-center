@@ -4,6 +4,8 @@ import {
   signOut,
   updateProfile as updateAuthProfile,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   sendPasswordResetEmail,
   onAuthStateChanged
 } from 'firebase/auth';
@@ -309,6 +311,19 @@ export async function firebaseGoogleSignIn(): Promise<{ success: boolean; user?:
       if (err.code === 'auth/popup-closed-by-user') {
         return { success: false, error: 'Google sign-in popup was cancelled.' };
       }
+      if (
+        err.code === 'auth/popup-blocked' ||
+        err.code === 'auth/cancelled-popup-request' ||
+        err.message?.includes('popup')
+      ) {
+        // Fallback for mobile and popup-blocking browsers
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          return { success: true };
+        } catch (redirErr: any) {
+          return { success: false, error: 'Mobile popup blocked. Please allow popups or use email sign-in.' };
+        }
+      }
       return { success: false, error: err.message || 'Google sign-in failed.' };
     }
   }
@@ -325,6 +340,12 @@ export async function firebaseGoogleSignIn(): Promise<{ success: boolean; user?:
     createdAt: new Date().toISOString(),
   };
   return { success: true, user: profile };
+}
+
+export async function firebaseGoogleRedirectSignIn(): Promise<void> {
+  if (isFirebaseConfigured && auth && googleProvider) {
+    await signInWithRedirect(auth, googleProvider);
+  }
 }
 
 export async function firebasePasswordReset(email: string): Promise<{ success: boolean; message?: string; error?: string }> {
@@ -525,32 +546,37 @@ export async function updateOrderStatus(
   newStatus: Order['orderStatus'],
   notes?: string
 ): Promise<boolean> {
+  const updatedAt = new Date().toISOString();
+  let firestoreUpdated = false;
+
   if (isFirebaseConfigured && db) {
     try {
       await updateDoc(doc(db, 'orders', orderId), {
         orderStatus: newStatus,
         statusNotes: notes || '',
-        updatedAt: new Date().toISOString(),
+        updatedAt,
       });
-      return true;
-    } catch (e) {}
+      firestoreUpdated = true;
+    } catch (e: any) {
+      console.warn('Firestore updateOrderStatus error, persisting in local storage:', e?.message || e);
+    }
   }
 
-  // Local Storage Fallback
+  // Always update Local Storage mirror as well
   try {
     const rawOrders = localStorage.getItem(LOCAL_STORAGE_ORDERS_KEY);
     const orders: Order[] = rawOrders ? JSON.parse(rawOrders) : [];
     const idx = orders.findIndex(o => o.id === orderId);
     if (idx >= 0) {
       orders[idx].orderStatus = newStatus;
-      if (notes) orders[idx].statusNotes = notes;
-      orders[idx].updatedAt = new Date().toISOString();
+      if (notes !== undefined) orders[idx].statusNotes = notes;
+      orders[idx].updatedAt = updatedAt;
       localStorage.setItem(LOCAL_STORAGE_ORDERS_KEY, JSON.stringify(orders));
       return true;
     }
-    return false;
+    return firestoreUpdated;
   } catch (e) {
-    return false;
+    return firestoreUpdated;
   }
 }
 
@@ -781,6 +807,60 @@ export const DEFAULT_SYSTEM_COUPONS: Coupon[] = [
     active: true,
   },
   {
+    code: 'ROBLOX50',
+    discountType: 'fixed',
+    discountValue: 50,
+    minOrderNpr: 500,
+    usedCount: 0,
+    active: true,
+    applicableProductId: 'roblox-topup',
+    applicableProductName: 'Roblox Robux Top-Up'
+  },
+  {
+    code: 'ROBLOX10',
+    discountType: 'percentage',
+    discountValue: 10,
+    minOrderNpr: 200,
+    maxDiscountNpr: 300,
+    usedCount: 0,
+    active: true,
+    applicableProductId: 'roblox-topup',
+    applicableProductName: 'Roblox Robux Top-Up'
+  },
+  {
+    code: 'EFOOTBALL10',
+    discountType: 'percentage',
+    discountValue: 10,
+    minOrderNpr: 200,
+    maxDiscountNpr: 250,
+    usedCount: 0,
+    active: true,
+    applicableProductId: 'efootball-pes',
+    applicableProductName: 'eFootball PES Coins'
+  },
+  {
+    code: 'STRIKE10',
+    discountType: 'percentage',
+    discountValue: 10,
+    minOrderNpr: 200,
+    maxDiscountNpr: 200,
+    usedCount: 0,
+    active: true,
+    applicableProductId: 'blood-strike',
+    applicableProductName: 'Blood Strike Gold Top-Up'
+  },
+  {
+    code: 'WINDS10',
+    discountType: 'percentage',
+    discountValue: 10,
+    minOrderNpr: 200,
+    maxDiscountNpr: 250,
+    usedCount: 0,
+    active: true,
+    applicableProductId: 'where-winds-meet',
+    applicableProductName: 'Where Winds Meet Echo Beads'
+  },
+  {
     code: 'CHATGPT100',
     discountType: 'fixed',
     discountValue: 100,
@@ -800,6 +880,28 @@ export const DEFAULT_SYSTEM_COUPONS: Coupon[] = [
     active: true,
     applicableProductId: 'free-fire-diamond-top-up',
     applicableProductName: 'Free Fire Diamond (Nepal & BD Server)'
+  },
+  {
+    code: 'MLBB10',
+    discountType: 'percentage',
+    discountValue: 10,
+    minOrderNpr: 200,
+    maxDiscountNpr: 200,
+    usedCount: 0,
+    active: true,
+    applicableProductId: 'mobile-legends-nepal',
+    applicableProductName: 'Mobile Legends Bang Bang'
+  },
+  {
+    code: 'PUBG10',
+    discountType: 'percentage',
+    discountValue: 10,
+    minOrderNpr: 200,
+    maxDiscountNpr: 250,
+    usedCount: 0,
+    active: true,
+    applicableProductId: 'pubg-mobile-uc-topup',
+    applicableProductName: 'PUBG Mobile UC'
   },
   {
     code: 'TOPUP20',
@@ -905,10 +1007,15 @@ export async function deleteCoupon(code: string): Promise<boolean> {
 
 export async function toggleCouponStatus(code: string, active: boolean): Promise<boolean> {
   const cleanCode = code.trim().toUpperCase();
+  let firestoreSuccess = false;
+
   if (isFirebaseConfigured && db) {
     try {
-      await updateDoc(doc(db, 'coupons', cleanCode), { active });
-    } catch (e) {}
+      await setDoc(doc(db, 'coupons', cleanCode), { code: cleanCode, active }, { merge: true });
+      firestoreSuccess = true;
+    } catch (e: any) {
+      console.warn('Firestore toggleCouponStatus error, persisting locally:', e?.message || e);
+    }
   }
 
   try {
@@ -917,14 +1024,26 @@ export async function toggleCouponStatus(code: string, active: boolean): Promise
     const idx = list.findIndex(c => c.code.toUpperCase() === cleanCode);
     if (idx >= 0) {
       list[idx].active = active;
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(LOCAL_STORAGE_COUPONS_KEY, JSON.stringify(list));
+    } else {
+      const def = DEFAULT_SYSTEM_COUPONS.find(c => c.code.toUpperCase() === cleanCode);
+      if (def) {
+        list.push({ ...def, active });
+      } else {
+        list.push({
+          code: cleanCode,
+          discountType: 'percentage',
+          discountValue: 10,
+          usedCount: 0,
+          active
+        });
       }
-      return true;
     }
-    return false;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LOCAL_STORAGE_COUPONS_KEY, JSON.stringify(list));
+    }
+    return true;
   } catch (e) {
-    return false;
+    return firestoreSuccess;
   }
 }
 
